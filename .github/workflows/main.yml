@@ -1,0 +1,21 @@
+name: CI Pipeline
+on:
+  push:
+    branches: [main]
+jobs:
+  build:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v2
+        - name: Set up Python 3.8
+          uses: actions/setup-python@v2
+          with:
+             python-version: 3.8
+        - name: install
+          run: make install
+        - name: format
+          run: make format
+        - name: debug
+          run: make lint
+        - name: test
+          run: make test
