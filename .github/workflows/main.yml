@@ -18,4 +18,6 @@ jobs:
         - name: debug
           run: make lint
         - name: test
+          env:
+            ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           run: make test
