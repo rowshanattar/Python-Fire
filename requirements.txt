@@ -4,3 +4,4 @@ black
 ipython
 anthropic
 dotenv
+fire
