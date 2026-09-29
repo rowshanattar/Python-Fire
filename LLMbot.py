@@ -32,4 +32,4 @@ def claude(topic, sentences):
 
 
 if __name__ == '__main__':
-    claude()
+    claude("Python", 2)  # Example usage; can be removed or modified as needed
