@@ -1,5 +1,6 @@
 pylint
 pytest
 black
-wikipedia
 ipython
+anthropic
+dotenv
