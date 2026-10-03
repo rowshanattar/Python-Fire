@@ -4,8 +4,8 @@
 A learning project that goes from Python basics to building **command-line tools (CLIs)**.
 It starts with notebooks on statements and functions, sets up a tested and linted project
 with a CI pipeline, builds a CLI that asks Claude (Anthropic's LLM) for a short summary of a
-topic using **Click**, and ends with the goal of turning plain Python objects into CLIs with
-**Python Fire**.
+topic using **Click**, turns the same function into a CLI with **Python Fire**, and finally
+serves it as a web API with **FastAPI**.
 
 ---
 
@@ -16,10 +16,11 @@ topic using **Click**, and ends with the goal of turning plain Python objects in
 3. [Using the Claude summary CLI (Click)](#using-the-claude-summary-cli-click)
 4. [What is a CLI, and why build one?](#what-is-a-cli-and-why-build-one)
 5. [Click explained](#click-explained)
-6. [Python Fire explained: the final goal](#python-fire-explained-the-final-goal)
+6. [Python Fire explained: the final goal](#python-fire-explained)
 7. [Click vs. Fire](#click-vs-fire)
-8. [Testing, formatting, linting and CI](#testing-formatting-linting-and-ci)
-9. [Roadmap](#roadmap)
+8. [API endpoint with FastAPI and Uvicorn](#api-endpoint-with-fastapi-and-uvicorn)
+9. [Testing, formatting, linting and CI](#testing-formatting-linting-and-ci)
+10. [Roadmap](#roadmap)
 
 ---
 
@@ -32,16 +33,18 @@ topic using **Click**, and ends with the goal of turning plain Python objects in
 | `myStatements.py` | The notebook's list and dictionary loops as a plain script. |
 | `hello.py` | A tiny `add(x, y)` function, used to check that the test setup works. |
 | `LLMbot.py` | **The Click CLI.** It asks Claude for an *N*-sentence summary of a topic and prints it. |
-| `mylib/LLMbot.py` | The same Claude logic as a plain, reusable function with no CLI code. This is what the tests import, and what Fire will turn into a CLI. |
+| `mylib/LLMbot.py` | The same Claude logic as a plain, reusable function with no CLI code. This is what the tests import, and what Fire and FastAPI build on. |
+| `fire-cli.py` | **The Fire CLI.** One line, `fire.Fire(claude)`, turns the `mylib` function into a CLI. |
+| `main.py` | **The web API.** A FastAPI app with a `POST /summarize` endpoint, run with Uvicorn. |
 | `test_hello.py`, `test_LLMbot.py` | Pytest tests. |
 | `Makefile` | Shortcuts: `make install`, `make test`, `make format`, `make lint`. |
 | `.github/workflows/main.yml` | GitHub Actions CI: install, format, lint and test on every push to `main`. |
 | `requirements.txt` | Project dependencies. |
 
 The main idea is to **keep the logic and the interface separate**. `mylib/LLMbot.py` holds
-the logic in a plain function. `LLMbot.py` puts a command-line interface on top of it. Tests
-target the logic, so the same function can be used by Click, by Fire, or from any other
-Python code.
+the logic in a plain function. `LLMbot.py`, `fire-cli.py` and `main.py` each put a different
+interface on top of it. Tests target the logic, so the same function can be used by Click,
+by Fire, by FastAPI, or from any other Python code.
 
 ---
 
@@ -203,7 +206,7 @@ if __name__ == '__main__':
 
 ---
 
-## Python Fire explained: the final goal
+## Python Fire explained
 
 [Python Fire](https://github.com/google/python-fire) is a Google library that
 **generates a CLI from any Python object**: a function, a class, an instance, a module, a
@@ -217,19 +220,23 @@ pip install fire
 ### A function becomes a command
 
 ```python
-# fire_cli.py
+# fire-cli.py
 import fire
 from mylib.LLMbot import claude
 
-if __name__ == "__main__":
-    fire.Fire(claude)
+fire.Fire(claude)
 ```
 
+> **Pass the function, don't call it.** `fire.Fire(claude("Python", 2))` would run the
+> function first and hand Fire the returned *string*. Fire would then offer string methods
+> such as `upper` and `split` as commands, and `--topic` would fail with
+> `Could not consume arg`.
+
 ```bash
-python fire_cli.py Python 2                          # positional arguments
-python fire_cli.py --topic=Python --sentences=2      # named arguments
-python fire_cli.py --topic "Machine Learning"        # sentences is still required: no default
-python fire_cli.py --help                            # help generated from signature and docstring
+python fire-cli.py Python 2                          # positional arguments
+python fire-cli.py --topic=Python --sentences=2      # named arguments
+python fire-cli.py --topic "Machine Learning"        # error: sentences has no default
+python fire-cli.py --help                            # help generated from signature and docstring
 ```
 
 Nothing in `mylib/LLMbot.py` had to change. The same function that the tests import is now
@@ -262,10 +269,10 @@ if __name__ == "__main__":
 ```
 
 ```bash
-python fire_cli.py summarize Python
-python fire_cli.py summarize Python --sentences=4
-python fire_cli.py compare Python Java
-python fire_cli.py --help
+python fire-cli.py summarize Python
+python fire-cli.py summarize Python --sentences=4
+python fire-cli.py compare Python Java
+python fire-cli.py --help
 ```
 
 ### Other things Fire can do
@@ -305,6 +312,88 @@ put a CLI on the Python objects that already exist.
 
 ---
 
+## API endpoint with FastAPI and Uvicorn
+
+A CLI is for people at a terminal. An **API** lets other programs, such as a website, a
+mobile app or another service, use the same logic over HTTP. `main.py` puts the same
+`mylib.LLMbot.claude` function behind a web endpoint:
+
+- **[FastAPI](https://fastapi.tiangolo.com/)** is the web framework. It defines the
+  endpoints, validates input and generates interactive documentation.
+- **[Pydantic](https://docs.pydantic.dev/)** describes the shape of the JSON request, so
+  invalid input is rejected automatically with a clear error.
+- **[Uvicorn](https://www.uvicorn.org/)** is the server that runs the FastAPI app.
+
+### Endpoints
+
+| Method | Path | Input | Returns |
+| --- | --- | --- | --- |
+| `GET` | `/` | Nothing | A welcome message |
+| `POST` | `/summarize` | JSON body `{"topic": str, "sentences": int}` | `{"summary": "..."}` |
+| `GET` | `/docs` | Nothing | Interactive Swagger UI, generated by FastAPI |
+| `GET` | `/redoc` | Nothing | Alternative API documentation |
+
+**GET or POST?** Use `GET` to read something with small inputs that can go in the URL. Use
+`POST` to send data in the request body, especially when it's large, nested or sensitive, or
+when the call triggers an action. `/summarize` uses `POST` because it takes a JSON body and
+each call costs an API request to Claude.
+
+### Run the server
+
+```bash
+python main.py
+# or, with auto-reload while you edit the code:
+uvicorn main:app --reload
+```
+
+Uvicorn prints `Uvicorn running on http://0.0.0.0:8000`. `0.0.0.0` means "listen on all
+network interfaces"; it isn't an address to open in the browser. Use
+**http://127.0.0.1:8000** or **http://localhost:8000** instead. Keep the terminal open: the
+API only works while the server is running.
+
+### Try it
+
+**In the browser:** open [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs), expand
+`POST /summarize`, click **Try it out**, edit the JSON and click **Execute**.
+
+**With curl:**
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/summarize' \
+  -H 'Content-Type: application/json' \
+  -d '{"topic": "Google", "sentences": 1}'
+```
+
+Response:
+
+```json
+{
+  "summary": "Google, founded in 1998 by Larry Page and Sergey Brin and now a subsidiary of Alphabet Inc., is a global technology company best known for its search engine, as well as products like Android, Chrome, YouTube, Gmail, and Google Cloud, and it generates most of its revenue from online advertising."
+}
+```
+
+**From Python** (needs `pip install requests`):
+
+```python
+import requests
+
+response = requests.post(
+    "http://127.0.0.1:8000/summarize",
+    json={"topic": "Google", "sentences": 1},
+)
+print(response.json()["summary"])
+```
+
+### Errors
+
+| Status | When |
+| --- | --- |
+| `200 OK` | The summary was generated. |
+| `422 Unprocessable Entity` | The JSON doesn't match `SummarizeRequest`, for example a missing field or `"sentences": "two"`. Pydantic produces this automatically. |
+| `500 Internal Server Error` | The call to Claude failed, for example because `ANTHROPIC_API_KEY` is missing or invalid. `detail` contains the error message. |
+
+---
+
 ## Testing, formatting, linting and CI
 
 ```bash
@@ -329,9 +418,13 @@ make lint      # pylint --disable=R,C *.py
 - [x] Project setup: Makefile, pytest, black, pylint, GitHub Actions CI
 - [x] Claude summary logic in `mylib/`
 - [x] Click CLI for the summary bot (`LLMbot.py`)
-- [ ] Add `click` and `fire` to `requirements.txt`
-- [ ] Add a Python Fire CLI (`fire_cli.py`) that exposes `mylib` functions and classes
+- [x] Add `fire`, `fastapi`, `uvicorn` and `pydantic` to `requirements.txt`
+- [x] Python Fire CLI for the summary function (`fire-cli.py`)
+- [x] FastAPI endpoint `POST /summarize` (`main.py`)
+- [ ] Add `click` to `requirements.txt`
+- [ ] Extend the Fire CLI to expose a class with subcommands (the `Bot` example)
 - [ ] Add CLI tests (Click `CliRunner`, Fire via `fire.Fire(obj, command=[...])`)
+- [ ] Add API tests with FastAPI's `TestClient`
 
 ## License
 

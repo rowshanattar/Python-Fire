@@ -5,3 +5,6 @@ ipython
 anthropic
 dotenv
 fire
+fastapi
+uvicorn[standard]
+pydantic
