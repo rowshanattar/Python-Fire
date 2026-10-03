@@ -3,7 +3,7 @@ This file is going to implement the claude function from the mylib.LLMbot module
 '''
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from pydantic import BaseModel, Field
 from mylib.LLMbot import claude
 
@@ -21,7 +21,7 @@ async def summarize(request: SummarizeRequest):
         summary = claude(topic, sentences)
         return {"summary": summary}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise ValueError("Invalid input provided") from e
 
 @app.get("/")
 async def root():
